@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "SonyLIV & FanCode 720p Filtered Proxy Server is Running!"
+    return "Optimized Live Stream Proxy Server is Running!"
 
 # সোনিলাইভ প্রক্সি রুট
 @app.route('/proxy')
@@ -21,7 +21,7 @@ def proxy_sonyliv():
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': 'https://www.sonyliv.com/'
     }
-    return handle_stream(target_url, headers, is_fancode=False)
+    return proxy_handler(target_url, headers, '/proxy?url=')
 
 # ফ্যানকোড প্রক্সি রুট
 @app.route('/fancode')
@@ -35,16 +35,18 @@ def proxy_fancode():
         'Referer': 'https://www.fancode.com/',
         'Origin': 'https://www.fancode.com'
     }
-    return handle_stream(target_url, headers, is_fancode=True)
+    return proxy_handler(target_url, headers, '/fancode?url=')
 
-def handle_stream(target_url, headers, is_fancode):
+def proxy_handler(target_url, headers, base_route):
     try:
-        base_endpoint = '/fancode?url=' if is_fancode else '/proxy?url='
-        
-        if '.m3u' in target_url or '.m3u8' in target_url:
-            res = requests.get(target_url, headers=headers, timeout=15)
+        # রিডাইরেকশন এবং লাইভ স্ট্রিম ক্যাচিং এড়াতে অপ্টিমাইজড রিকোয়েস্ট
+        res = requests.get(target_url, headers=headers, stream=True, allow_redirects=True, timeout=15)
+        content_type = res.headers.get('content-type', '')
+
+        # ১. যদি ফাইলটি .m3u বা .m3u8 প্লেলিস্ট হয় (720p ফিল্টারসহ)
+        if '.m3u' in target_url or '.m3u8' in target_url or 'mpegurl' in content_type:
             content = res.text
-            base_proxy_url = request.host_url.rstrip('/') + base_endpoint
+            base_proxy_url = request.host_url.rstrip('/') + base_route
             
             lines = content.splitlines()
             new_lines = []
@@ -55,7 +57,6 @@ def handle_stream(target_url, headers, is_fancode):
                 line_str = line.strip()
                 if is_master:
                     if line_str.startswith('#EXT-X-STREAM-INF:'):
-                        # 720p বা 1280x720 ফিল্টার করার শর্ত
                         if '1280x720' in line_str or '720p' in line_str or '720' in line_str:
                             skip_next = False
                             new_lines.append(line_str)
@@ -79,11 +80,11 @@ def handle_stream(target_url, headers, is_fancode):
             response.headers["Access-Control-Allow-Origin"] = "*"
             return response
 
-        elif '.json' in target_url:
-            res = requests.get(target_url, headers=headers, timeout=15)
+        # ২. যদি ফাইলটি .json প্লেলিস্ট হয়
+        elif '.json' in target_url or 'application/json' in content_type:
             try:
                 data = res.json()
-                base_proxy_url = request.host_url.rstrip('/') + base_endpoint
+                base_proxy_url = request.host_url.rstrip('/') + base_route
                 
                 def update_json_urls(obj):
                     if isinstance(obj, dict):
@@ -104,19 +105,18 @@ def handle_stream(target_url, headers, is_fancode):
                 response.headers["Access-Control-Allow-Origin"] = "*"
                 return response
             except Exception:
-                response = Response(res.text, content_type='application/json', status=200)
-                response.headers["Access-Control-Allow-Origin"] = "*"
-                return response
+                pass
 
-        req = requests.get(target_url, headers=headers, stream=True, timeout=15)
+        # ৩. ভিডিওর ছোট টুকরো (.ts, .m4s ইত্যাদি) স্মুথলি স্ট্রিম করার জন্য
         response = Response(
-            req.iter_content(chunk_size=1024), 
-            content_type=req.headers.get('content-type', 'video/mp2t'),
-            status=req.status_code
+            res.iter_content(chunk_size=8192), 
+            content_type=content_type or 'video/mp2t',
+            status=res.status_code
         )
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Access-Control-Allow-Origin"] = "*"
         return response
+
     except Exception as e:
         return str(e), 500
 
