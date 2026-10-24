@@ -39,7 +39,10 @@ def proxy_fancode():
 
 def proxy_handler(target_url, headers, base_route):
     try:
-        # রিডাইরেকশন এবং লাইভ স্ট্রিম ক্যাচিং এড়াতে অপ্টিমাইজড রিকোয়েস্ট
+        # লিংকে পাইপ (|) বা অতিরিক্ত অংশ থাকলে তা রিমুভ করে শুধু মূল URL নেওয়া
+        if '|' in target_url:
+            target_url = target_url.split('|')[0]
+
         res = requests.get(target_url, headers=headers, stream=True, allow_redirects=True, timeout=15)
         content_type = res.headers.get('content-type', '')
 
